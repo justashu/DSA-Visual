@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cycle Detection via DFS</title>
+  <style>
+    /* Premium GitHub Dark Mode Aesthetic & Layout */
+    :root { 
+      --bg: #0d1117; --panel: #161b22; --border: #30363d; 
+      --text: #c9d1d9; --text-dim: #8b949e; 
+      --blue: #1f6feb; --green: #238636; --red: #da3633; --yellow: #d29922; --purple: #8957e5;
+    }
+    
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; 
+      background: var(--bg); color: var(--text); 
+      margin: 0; padding: 16px; 
+      height: 100vh; box-sizing: border-box; 
+      display: flex; justify-content: center; overflow: hidden;
+    }
+    
+    .app-container { 
+      display: flex; flex-direction: column; gap: 12px; 
+      width: 100%; max-width: 900px; height: 100%; 
+    }
+    
+    .header { display: flex; justify-content: space-between; align-items: center; }
+    h2 { margin: 0; font-size: 16px; font-weight: 600; }
+    .tabs { display: flex; gap: 8px; background: var(--panel); padding: 4px; border-radius: 8px; border: 1px solid var(--border); }
+    .tab-btn { background: transparent; border: none; color: var(--text-dim); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; transition: 0.2s; }
+    .tab-btn.active { background: var(--bg); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,0.5); border: 1px solid var(--border); }
+    
+    .canvas-wrapper { 
+      flex-grow: 1; background: var(--panel); border: 1px solid var(--border); 
+      border-radius: 8px; position: relative; min-height: 0; overflow: hidden;
+    }
+    svg { width: 100%; height: 100%; display: block; }
+    
+    .legend { position: absolute; top: 12px; left: 12px; display: flex; gap: 12px; font-size: 11px; color: var(--text-dim); background: rgba(13, 17, 23, 0.8); padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); }
+    .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+    
+    .hud { 
+      background: var(--panel); border: 1px solid var(--border); border-radius: 8px; 
+      padding: 12px; display: flex; flex-direction: column; gap: 10px; flex-shrink: 0;
+    }
+    
+    .hud-state { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .state-col { display: flex; flex-direction: column; gap: 4px; border-right: 1px solid var(--border); padding-right: 12px; font-size: 13px; }
+    .state-col:last-child { border-right: none; }
+    .s-label { color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .s-val { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; color: var(--blue); font-weight: 600; }
+    
+    .hud-bottom { display: flex; align-items: center; gap: 16px; }
+    .msg-box { 
+      flex-grow: 1; font-size: 13px; line-height: 1.4; padding: 8px 12px; 
+      border-radius: 6px; border-left: 4px solid var(--blue); background: var(--bg); 
+    }
+    .msg-box b { color: white; }
+    .msg-box.cycle { border-left-color: var(--red); color: #ff7b72; background: rgba(218, 54, 51, 0.1); }
+    .msg-box.ok { border-left-color: var(--green); color: #3fb950; background: rgba(35, 134, 54, 0.1); }
+    .msg-box.backtrack { border-left-color: var(--purple); }
+    
+    .controls { display: flex; gap: 8px; align-items: center; }
+    .btn { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; transition: 0.2s; }
+    .btn.primary { background: var(--green); border-color: var(--green); color: white; }
+    .btn:hover:not(:disabled) { border-color: var(--text-dim); filter: brightness(1.2); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    #step-counter { font-size: 12px; color: var(--text-dim); width: 80px; text-align: right; font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+
+<div class="app-container">
+  <div class="header">
+    <h2>Cycle Detection via DFS</h2>
+    <div class="tabs" id="graph-tabs">
+      <button class="tab-btn active" onclick="loadGraph(0)">Graph w/ Cycle</button>
+      <button class="tab-btn" onclick="loadGraph(1)">Graph w/o Cycle</button>
+    </div>
+  </div>
+
+  <div class="canvas-wrapper">
+    <div class="legend">
+      <span><span class="dot" style="background:#30363d;"></span> Unvisited</span>
+      <span><span class="dot" style="background:#1f6feb;"></span> Active Path (Stack)</span>
+      <span><span class="dot" style="background:#238636;"></span> Fully Explored</span>
+      <span><span class="dot" style="background:#da3633;"></span> Cycle!</span>
+    </div>
+    <svg id="g" viewBox="0 0 650 250">
+      <defs>
+        <filter id="glow">
+          <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+          <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="shadow">
+          <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.5"/>
+        </filter>
+      </defs>
+      <g id="edges-g"></g>
+      <g id="nodes-g"></g>
+    </svg>
+  </div>
+
+  <div class="hud">
+    <div class="hud-state">
+      <div class="state-col">
+        <span class="s-label">Active Path (Stack)</span>
+        <span class="s-val" id="sv-q">[]</span>
+      </div>
+      <div class="state-col">
+        <span class="s-label">Visited Set</span>
+        <span class="s-val" id="sv-vis" style="color:var(--green)">{}</span>
+      </div>
+      <div class="state-col">
+        <span class="s-label">Parent Map</span>
+        <span class="s-val" id="sv-par" style="color:var(--text-dim)">{}</span>
+      </div>
+      <div class="state-col">
+        <span class="s-label">Current / Neighbor</span>
+        <span class="s-val" style="color:var(--yellow)"><span id="sv-cur">-</span> &rarr; <span id="sv-nb">-</span></span>
+      </div>
+    </div>
+    
+    <div class="hud-bottom">
+      <div id="msg" class="msg-box">Press <b>Next step</b> to begin the DFS traversal.</div>
+      <div class="controls">
+        <button class="btn" id="btn-prev" onclick="go(-1)" disabled>← Prev</button>
+        <button class="btn primary" id="btn-next" onclick="go(1)">Next →</button>
+        <button class="btn" onclick="reset()">↺</button>
+        <span id="step-counter">0 / 0</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const GRAPHS = [
+  {
+    nodes: [0,1,2,3,4],
+    edges: [[0,1],[1,2],[2,3],[3,4],[4,1]],
+    pos: {0:[120,125], 1:[250,55], 2:[400,55], 3:[530,125], 4:[325,195]},
+    labels: ['0','1','2','3','4']
+  },
+  {
+    nodes: [0,1,2,3,4],
+    edges: [[0,1],[0,2],[1,3],[1,4]],
+    pos: {0:[325,45], 1:[180,125], 2:[470,125], 3:[100,205], 4:[260,205]},
+    labels: ['0','1','2','3','4']
+  }
+];
+
+let G, steps, stepIdx;
+
+function adj(G, u) {
+  // Sort numerically to ensure predictable DFS paths
+  return G.edges.filter(([a,b]) => a===u||b===u).map(([a,b]) => a===u?b:a).sort();
+}
+
+function buildSteps(G) {
+  const steps = [];
+  const visited = new Set();
+  const explored = new Set();
+  const parent = {};
+  const path = [];
+  let cycleFound = null;
+
+  steps.push({ type:'init', visited:new Set(), explored:new Set(), path:[], parent:{}, cur:null, nb:null, msg:'Starting DFS from node 0. We will dive as deep as possible before backtracking.', cycleEdge:null });
+
+  // Recursive DFS function simulating the stack
+  function dfs(u, p) {
+    if (cycleFound) return;
+    
+    visited.add(u);
+    parent[u] = p;
+    path.push(u);
+    
+    steps.push({ type:'visit', visited:new Set(visited), explored:new Set(explored), path:[...path], parent:{...parent}, cur:u, nb:null, msg:`<b>Discovered Node ${u}.</b> Added to active path.`, cycleEdge:null });
+
+    for (const v of adj(G, u)) {
+      if (cycleFound) break;
+
+      steps.push({ type:'check', visited:new Set(visited), explored:new Set(explored), path:[...path], parent:{...parent}, cur:u, nb:v, msg:`Checking neighbor <b>${v}</b> of node ${u}...`, cycleEdge:null });
+
+      if (!visited.has(v)) {
+        steps.push({ type:'descend', visited:new Set(visited), explored:new Set(explored), path:[...path], parent:{...parent}, cur:u, nb:v, msg:`Neighbor <b>${v}</b> is unvisited. DFS dives deep into this path.`, cycleEdge:null });
+        dfs(v, u);
+      } else if (v !== p) {
+        cycleFound = [u, v];
+        steps.push({ type:'cycle', visited:new Set(visited), explored:new Set(explored), path:[...path], parent:{...parent}, cur:u, nb:v, msg:`<b>CYCLE DETECTED!</b> Neighbor <b>${v}</b> is already visited, and it is NOT the parent of ${u}. We found a back-edge!`, cycleEdge:[u,v] });
+        return;
+      } else {
+        steps.push({ type:'skip', visited:new Set(visited), explored:new Set(explored), path:[...path], parent:{...parent}, cur:u, nb:v, msg:`Neighbor <b>${v}</b> is visited, but it is the <b>parent</b> of ${u}. Safe to ignore (trivial cycle).`, cycleEdge:null });
+      }
+    }
+
+    if (!cycleFound) {
+      path.pop();
+      explored.add(u);
+      steps.push({ type:'backtrack', visited:new Set(visited), explored:new Set(explored), path:[...path], parent:{...parent}, cur:path.length > 0 ? path[path.length-1] : null, nb:null, msg:`All neighbors of <b>${u}</b> explored. <b>Backtracking</b> out of this path.`, cycleEdge:null });
+    }
+  }
+
+  // Start the recursive traversal
+  dfs(0, null);
+
+  if (!cycleFound) {
+    steps.push({ type:'done', visited:new Set(visited), explored:new Set(explored), path:[], parent:{...parent}, cur:null, nb:null, msg:'<b>DFS Complete.</b> All nodes explored deeply. No back-edges found, therefore NO cycle exists.', cycleEdge:null });
+  }
+  
+  return steps;
+}
+
+function getStyle(nodeId, step) {
+  if (step.cycleEdge && step.cycleEdge.includes(nodeId)) return { fill: 'var(--bg)', stroke: 'var(--red)', text: 'var(--text)', filter: 'url(#glow)' };
+  if (step.cur === nodeId || step.nb === nodeId) return { fill: 'var(--panel)', stroke: 'var(--yellow)', text: 'var(--text)', filter: 'url(#glow)' };
+  
+  // Custom logic for DFS
+  if (step.path.includes(nodeId)) return { fill: 'var(--panel)', stroke: 'var(--blue)', text: 'var(--text)', filter: 'url(#shadow)' };
+  if (step.explored.has(nodeId)) return { fill: 'var(--panel)', stroke: 'var(--green)', text: 'var(--text)', filter: 'none' };
+  if (step.visited.has(nodeId)) return { fill: 'var(--panel)', stroke: 'var(--blue)', text: 'var(--text)', filter: 'url(#shadow)' };
+  
+  return { fill: 'var(--panel)', stroke: 'var(--border)', text: 'var(--text-dim)', filter: 'none' };
+}
+
+function render() {
+  const step = steps[stepIdx];
+  const eg = document.getElementById('edges-g');
+  const ng = document.getElementById('nodes-g');
+  eg.innerHTML = ''; ng.innerHTML = '';
+
+  for (const [a,b] of G.edges) {
+    const [x1,y1] = G.pos[a]; const [x2,y2] = G.pos[b];
+    const isCycle = step.cycleEdge && ((step.cycleEdge[0]===a&&step.cycleEdge[1]===b)||(step.cycleEdge[0]===b&&step.cycleEdge[1]===a));
+    const isTree = step.parent[b]===a || step.parent[a]===b;
+    const bothVis = step.visited.has(a) && step.visited.has(b);
+    
+    let color = 'var(--border)';
+    let width = '2';
+    let dash = 'none';
+
+    if (isCycle) { color = 'var(--red)'; width = '4'; dash = '6 4'; }
+    else if (isTree && bothVis) { color = 'var(--green)'; width = '3'; }
+    else if (step.nb === a && step.cur === b || step.nb === b && step.cur === a) { color = 'var(--yellow)'; width = '3'; }
+
+    const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1',x1); line.setAttribute('y1',y1);
+    line.setAttribute('x2',x2); line.setAttribute('y2',y2);
+    line.setAttribute('stroke', color);
+    line.setAttribute('stroke-width', width);
+    line.setAttribute('stroke-dasharray', dash);
+    if(isCycle) line.setAttribute('filter', 'url(#glow)');
+    eg.appendChild(line);
+  }
+
+  for (const n of G.nodes) {
+    const [cx,cy] = G.pos[n];
+    const style = getStyle(n, step);
+    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+    
+    const circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    circle.setAttribute('cx',cx); circle.setAttribute('cy',cy); circle.setAttribute('r',20);
+    circle.setAttribute('fill', style.fill);
+    circle.setAttribute('stroke', style.stroke);
+    circle.setAttribute('stroke-width', '3');
+    circle.setAttribute('filter', style.filter);
+    g.appendChild(circle);
+
+    const txt = document.createElementNS('http://www.w3.org/2000/svg','text');
+    txt.setAttribute('x',cx); txt.setAttribute('y',cy);
+    txt.setAttribute('text-anchor','middle'); txt.setAttribute('dominant-baseline','central');
+    txt.setAttribute('font-size', '16'); txt.setAttribute('font-weight','600');
+    txt.setAttribute('fill', style.text);
+    txt.textContent = G.labels[n];
+    g.appendChild(txt);
+
+    if (step.parent[n] !== undefined && step.parent[n] !== null) {
+      const pt = document.createElementNS('http://www.w3.org/2000/svg','text');
+      pt.setAttribute('x',cx); pt.setAttribute('y',cy-28);
+      pt.setAttribute('text-anchor','middle'); pt.setAttribute('font-size','10');
+      pt.setAttribute('fill','var(--text-dim)'); pt.setAttribute('font-family','monospace');
+      pt.textContent = `P:${step.parent[n]}`;
+      g.appendChild(pt);
+    }
+    ng.appendChild(g);
+  }
+
+  // Update Messages based on type
+  let msgClass = 'msg-box';
+  if (step.type === 'cycle') msgClass += ' cycle';
+  else if (step.type === 'done' && !step.cycleEdge) msgClass += ' ok';
+  else if (step.type === 'backtrack') msgClass += ' backtrack';
+
+  document.getElementById('msg').innerHTML = step.msg;
+  document.getElementById('msg').className = msgClass;
+
+  document.getElementById('sv-q').textContent = '['+step.path.join(', ')+']';
+  document.getElementById('sv-vis').textContent = '{'+[...step.visited].join(', ')+'}';
+  document.getElementById('sv-par').textContent = '{' + Object.entries(step.parent).map(([k,v])=>`${k}:${v}`).join(', ') + '}';
+  document.getElementById('sv-cur').textContent = step.cur !== null ? step.cur : '-';
+  document.getElementById('sv-nb').textContent = step.nb !== null ? step.nb : '-';
+  
+  document.getElementById('step-counter').textContent = `${stepIdx+1} / ${steps.length}`;
+  document.getElementById('btn-prev').disabled = stepIdx === 0;
+  document.getElementById('btn-next').disabled = stepIdx === steps.length-1;
+}
+
+function go(d) { stepIdx = Math.max(0, Math.min(steps.length-1, stepIdx+d)); render(); }
+function reset() { stepIdx = 0; render(); }
+
+function loadGraph(i) {
+  G = GRAPHS[i];
+  steps = buildSteps(G);
+  stepIdx = 0;
+  document.querySelectorAll('.tab-btn').forEach((b,j) => b.classList.toggle('active', j===i));
+  render();
+}
+
+loadGraph(0);
+</script>
+</body>
+</html>
